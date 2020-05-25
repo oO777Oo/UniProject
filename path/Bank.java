@@ -22,6 +22,30 @@ public class Bank {
     static ArrayList<Credit> creditWaitingList = new ArrayList<>();
     
     private Bank() { }
+    
+    public static void dbInitialization() throws IOException, SQLException {
+        if (initializationCounter) {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+            System.out.println("Write your query path to create DB: ");
+            String filepath = reader.readLine();
+            File file = new File(filepath);
+            reader = new BufferedReader(new FileReader(file));
+            StringBuilder query = new StringBuilder();
+            String st;
+            while ((st = reader.readLine()) != null) {
+                query.append(st);
+            }
+            Connection connection = db.getRes();
+            Statement statement = connection.createStatement();
+            statement.executeUpdate(query.toString());
+            System.out.println("DB is created");
+            statement.close();
+            connection.close();
+            initializationCounter = false;
+        } else {
+            System.out.println("DB is already exist");
+        }
+    }
 
     /**
      * =======================================================================================================
