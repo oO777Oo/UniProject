@@ -1,5 +1,6 @@
 package bank.path;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 
@@ -67,7 +68,7 @@ public class Costumer extends Human {
         this.account = account;
     }
 
-    public void creditApplication(double sum, long time, String date) throws SQLException {
-        this.creditHistory.add(Bank.creditWay(sum,this, time, date));
+    public void creditApplication(double sum, long time, String date) throws SQLException, IOException {
+        Bank.creditWay(sum,this, time, date);
     }
 }
