@@ -43,11 +43,12 @@ public class Credit {
         return creditNr;
     }
 
-    public void setCreditNr(int creditNr) {
-        this.creditNr = creditNr;
-    }
-
     public long getCostumerNr() {
         return costumerNr;
+    }
+
+    @Override
+    public String toString() {
+        return "Credit number: " + this.creditNr + "for " + this.sum + "is ";
     }
 }
