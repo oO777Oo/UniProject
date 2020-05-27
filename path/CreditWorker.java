@@ -9,7 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 
-public class CreditWorker extends Worker {
+public class CreditWorker extends Worker implements CreditDecision {
     /** checkWorkerNr -> Arata pe ce pozitie este lucratorul */
 
     long workerNr;
@@ -22,7 +22,6 @@ public class CreditWorker extends Worker {
     public void doWork() throws SQLException, IOException {
         Connection connection = Bank.db.getRes();
         ArrayList<Credit> work = workList(connection);
-        StringBuilder query = new StringBuilder("UPDATE creditList SET ");
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
         for (Credit credit: work) {
@@ -32,12 +31,7 @@ public class CreditWorker extends Worker {
                 connection.close();
                 break;
             } else {
-                decideCredit(credit, connection);
-                String currentWorkerNr = checkWorkerNr(credit, connection);
-                query.append(currentWorkerNr).append(" = -1 WHERE CreditNr = ").append(credit.getCreditNr());
-                PreparedStatement statement = connection.prepareStatement(query.toString());
-                statement.execute();
-                statement.close();
+                workerDecide(credit);
                 work.remove(credit);
             }
         }
@@ -70,54 +64,6 @@ public class CreditWorker extends Worker {
         return workToDo;
     }
 
-    public void decideCredit(Credit credit, Connection connection) throws SQLException, IOException {
-        creditRates rate;
-        double percentRate = 0;
-
-        String getAccount = "SELECT * FROM Account WHERE costumerNr = " + credit.getCostumerNr() + " ;";
-
-        long accountNr = 0;
-        double balance = 0;
-        double creditRating = 0;
-
-        ResultSet data = connection.createStatement().executeQuery(getAccount);
-
-        while (data.next()) {
-            accountNr = data.getLong("accountNr");
-            balance = data.getDouble("balance");
-            creditRating = data.getDouble("creditRating");
-        }
-        data.close();
-
-        if (creditRating <= 5) {
-            rate = creditRates.Bad;
-        } else if (creditRating > 5 && creditRating <= 6.5) {
-            rate = creditRates.Medium;
-        } else if (creditRating > 6.5 && creditRating <= 8) {
-            rate = creditRates.Good;
-        } else {
-            rate = creditRates.VeryGood;
-        }
-
-        switch (rate) {
-            case Bad:
-                percentRate = 15.0;
-            case Medium:
-                percentRate = 10.0;
-            case Good:
-                percentRate = 6.0;
-            case VeryGood:
-                percentRate = 3.0;
-        }
-        System.out.println("Heir are all data about costumer: \n");
-        System.out.println("account number: " + accountNr);
-        System.out.println("balance: " + balance);
-        System.out.println("credit rating: " + creditRating);
-        System.out.println("Case rate is " + rate);
-        boolean ans = insertAnswer();
-        insertInDb(ans, percentRate, credit, connection);
-
-    }
 
     private void insertInDb(boolean ans, double percentRate, Credit credit, Connection connection) throws SQLException {
         String currentWorkerNr = checkWorkerNr(credit, connection);
@@ -147,7 +93,7 @@ public class CreditWorker extends Worker {
         newStatement.close();
         connection.close();
     }
-    /** Automatiesch ohne Buffer */
+
     private Boolean insertAnswer() throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         String answer;
@@ -165,7 +111,6 @@ public class CreditWorker extends Worker {
         }
         return answer.equals("Y");
     }
-    /** ============================ Help Methods to solve code duplication in Methods ============================ */
 
     private String checkWorkerNr(Credit credit, Connection connection) throws SQLException {
         String ans = "";
@@ -194,5 +139,46 @@ public class CreditWorker extends Worker {
         }
         return ans;
 
+    }
+
+    @Override
+    public void workerDecide(Credit credit) throws SQLException, IOException {
+        double percentRate = 0;
+        Connection connection = Bank.db.getRes();
+        creditRates rate = creditRate(credit, connection);
+        Account account = Bank.getAccount(credit.costumerNr);
+        switch (rate) {
+            case Bad:
+                percentRate = 15.0;
+            case Medium:
+                percentRate = 10.0;
+        }
+
+
+        System.out.println("Heir are all data about costumer: \n");
+        System.out.println("account number: " + account.getAccountNr());
+        System.out.println("balance: " + account.getBalance());
+        System.out.println("credit rating: " + account.getCreditRating());
+        System.out.println("Case rate is " + rate);
+        boolean ans = insertAnswer();
+
+        ArrayList<Object> infoList = new ArrayList<>();
+        infoList.add(ans);
+        infoList.add(percentRate);
+        infoList.add(credit);
+        Bank.creditWaitingList.add(infoList);
+        deleteCreditFromDB(credit);
+
+    }
+    private void deleteCreditFromDB(Credit credit) throws SQLException {
+        Connection connection = Bank.db.getRes();
+        String query = "DELETE FROM creditList WHERE CreditNr = " + credit.creditNr;
+        PreparedStatement statement = connection.prepareStatement(query);
+        statement.execute(query);
+        connection.close();
+    }
+
+    public creditRates creditRate(Credit credit, Connection connection) throws SQLException, IOException {
+        return Bank.creditRate(credit, connection);
     }
 }
