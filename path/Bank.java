@@ -1,218 +1,108 @@
 package bank.path;
 
+import java.io.*;
 import java.sql.*;
 import java.util.ArrayList;
-import java.util.Date;
 
 
-public class Bank {
+public class Bank implements CreditDecision{
 
     private static final Bank bank = new Bank();
-    private static int costumerNr = 0;
-    private static int workerCounter = 0;
+    // private static int costumerNr = 0;
+    // private static int workerCounter = 0;
     private static final String root = "root";
-    private static final String rootPass = "";
-    private static final String connectUrl = "jdbc:mysql://localhost:3306/AppDev";
+    private static final String rootPass = "123qwert";
+    private static final String connectUrl = "jdbc:mysql://localhost:3306/";
     private static final String timeZone = "?useUnicode=true&useJDBCCompliantTimezoneShift=true&useLegacyDatetimeCode=false&serverTimezone=UTC";
     private static final String driverLink = "com.mysql.cj.jdbc.Driver";
     static final DBConnection db = new DBConnection(root, rootPass,connectUrl + timeZone, driverLink);
-    static String bankCode = "BLZBLZ";
-    static Worker ceo;
+    // static String bankCode = "BLZBLZ";
     static Worker supervisor;
-    static ArrayList<Credit> creditWaitingList = new ArrayList<>();
+    static ArrayList<ArrayList<Object>> creditWaitingList = new ArrayList<>();
+    private static boolean initializationCounter = true;
     
     private Bank() { }
-    
+
+    /** SQL Script - DB initialization */
     public static void dbInitialization() throws IOException, SQLException {
         if (initializationCounter) {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-            System.out.println("Write your query path to create DB: ");
-            String filepath = reader.readLine();
-            File file = new File(filepath);
-            reader = new BufferedReader(new FileReader(file));
-            StringBuilder query = new StringBuilder();
-            String st;
-            while ((st = reader.readLine()) != null) {
-                query.append(st);
+            String filepath = "src/bank/path/AppDev2_DB_creation.sql";
+            Connection connection = null;
+            BufferedReader reader = null;
+            Statement statement;
+            try {
+                connection = db.getRes();
+                statement = connection.createStatement();
+                reader = new BufferedReader(new FileReader(filepath));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    statement.execute(line);
+                }
+            } catch (SQLException e) {
+                System.out.println("Can't create database 'AppDev'; database exists");
+            } finally {
+                if (reader != null) {
+                    reader.close();
+                }
+                if (connection != null) {
+                    connection.close();
+                }
+                initializationCounter = false;
+
             }
-            Connection connection = db.getRes();
-            Statement statement = connection.createStatement();
-            statement.executeUpdate(query.toString());
-            System.out.println("DB is created");
-            statement.close();
-            connection.close();
-            initializationCounter = false;
         } else {
             System.out.println("DB is already exist");
         }
     }
 
-    /**
-     * =======================================================================================================
-     *                                         SELECT FROM DB.
-     * */
+    public static creditRates creditRate(Credit credit, Connection connection) throws SQLException {
+        creditRates rate;
+        String getAccount = "SELECT creditRating FROM Account WHERE costumerNr = " + credit.getCostumerNr() + " ;";
+        double creditRating = 0;
 
-    public static Costumer getCostumerData(long costumerNr) throws SQLException {
+        ResultSet data = connection.createStatement().executeQuery(getAccount);
 
-        Connection connection = db.getRes();
-        String queryCostumer = "SELECT firstName, lastName, birthday, address FROM costumerData WHERE costumerNR = ";
-        ResultSet dataSetCostumer = connection.createStatement().executeQuery(queryCostumer + costumerNr + ";");
-        // Costumer data
-        String firstName = "";
-        String lastName = "";
-        String birthday = "";
-        String address = "";
-        while (dataSetCostumer.next()) {
-            firstName = dataSetCostumer.getString("firstName");
-            lastName = dataSetCostumer.getString("lastName");
-            birthday = dataSetCostumer.getString("birthday");
-            address = dataSetCostumer.getString("address");
+        while (data.next()) {
+            creditRating = data.getDouble("creditRating");
         }
-        return new Costumer(firstName, lastName, birthday, address, costumerNr);
+
+        if (creditRating <= 5) {
+            rate = creditRates.Bad;
+        } else if (creditRating > 5 && creditRating <= 6.5) {
+            rate = creditRates.Medium;
+        } else if (creditRating > 6.5 && creditRating <= 8) {
+            rate = creditRates.Good;
+        } else {
+            rate = creditRates.VeryGood;
+        }
+        return rate;
     }
 
+    static void approvedCredit(Credit credit) {
+        Costumer costumer = credit.getCostumer();
+        Account account = costumer.getAccount();
+        account.insertCredit(credit);
+    }
 
-    public Account getAccountData(long accountNr) throws SQLException {
-        Connection connection = db.getRes(); // DB connection
+    public static Account getAccount(long costumerNr) throws SQLException {
+        Connection connection = db.getRes();
+        String queryAccount = "SELECT accountNr, balance, bankCode, creditRating FROM Account WHERE costumerNr = " + costumerNr;
 
-        // SQL SELECT Queries
-        String queryAccount = "SELECT costumerNr, balance, bankCode, creditRating FROM Account WHERE accountNr = " + accountNr;
-
-        long costumerNr = 0;
+        long accountNr = 0;
         double balance = 0;
         String bankCode = "";
         double creditRating = 0;
 
-        // Next Implementation of Account query
         ResultSet dataSet = connection.createStatement().executeQuery(queryAccount);
 
         while (dataSet.next()) {
-            costumerNr = dataSet.getLong("costumerNr");
+            accountNr = dataSet.getLong("accountNr");
             balance = dataSet.getDouble("balance");
             bankCode = dataSet.getString("bankCode");
             creditRating = dataSet.getDouble("creditRating");
         }
-        Account account = new Account(balance, accountNr, bankCode, creditRating);
-        account.setCostumerNr(costumerNr);
-        return account;
-    }
+        return new Account(balance, accountNr, bankCode, creditRating);
 
-    public Costumer wholeCostumerAccountData(long accountNr) throws SQLException {
-        Account account = getAccountData(accountNr);
-        Costumer costumer = getCostumerData(account.getCostumer().getCostumerNr());
-        costumer.setAccount(account);
-        account.setCostumer(costumer);
-        return costumer;
-    }
-
-    public static Worker getWorker(int workerNr) throws SQLException {
-        Connection connection = db.getRes();
-        String query = "SELECT status, salary, date, sex, firstName, lastName, birthday, address FROM Workers" +
-                " WHERE workerNr = " + workerNr + ";";
-
-        String status = "";
-        double salary = 0;
-        String date = "";
-        boolean sex = false;
-        String firstName = "";
-        String lastName = "";
-        String birthday = "";
-        String address = "";
-
-        ResultSet dataSetCostumer = connection.createStatement().executeQuery(query);
-        while (dataSetCostumer.next()) {
-            status = dataSetCostumer.getString("status");
-            salary = dataSetCostumer.getDouble("salary");
-            date = dataSetCostumer.getString("date");
-            sex = dataSetCostumer.getBoolean("sex");
-            firstName = dataSetCostumer.getString("firstName");
-            lastName = dataSetCostumer.getString("lastName");
-            birthday = dataSetCostumer.getString("birthday");
-            address = dataSetCostumer.getString("address");
-        }
-        dataSetCostumer.close();
-        connection.close();
-        Worker worker = new Worker(firstName,lastName,birthday,address,status,sex,salary, date);
-        worker.setWorkerNr(workerNr);
-        return worker;
-
-    }
-
-    /**
-     * ========================================================================================================
-     *                                  INSERT IN DB.
-     * */
-
-    public static void addNewCostumer(String firstName, String lastName, String birthday, String address) throws SQLException {
-        Account account = new Account(bankCode);
-        account.setBank(bank);
-
-        Connection connection = db.getRes();
-
-        String queryCostumer = "INSERT INTO costumerData (costumerNr, firstName, lastName, birthday, address)" +
-                "VALUES (?, ?, ?, ?, ?)";
-
-        String queryAccount = "INSERT INTO Account (accountNr, costumerNr, balance, bankCode, creditRating)" +
-                "VALUES (?, ?, ?, ?, ?)";
-
-        PreparedStatement statement = connection.prepareStatement(queryCostumer);
-        statement.setLong(1, costumerNr);
-        statement.setString(2, firstName);
-        statement.setString(3, lastName);
-        statement.setString(4, birthday);
-        statement.setString(5, address);
-        statement.execute();
-
-        statement = connection.prepareStatement(queryAccount);
-        statement.setLong(1, account.accountNr);
-        statement.setLong(2, costumerNr);
-        statement.setDouble(3, account.balance);
-        statement.setString(4, account.bankCode);
-        statement.setDouble(5, account.creditRating);
-        statement.execute();
-
-        statement.close();
-        connection.close();
-        costumerNr ++;
-    }
-
-    public void addNewWorker(String firstName, String lastName, String birthday, String address, String status, Boolean sex, double salary) throws SQLException {
-        Connection connection = db.getRes();
-        Date date = new Date();
-        String query = "INSERT INTO Workers (workerNr, status, salary, date, sex, firstName, lastName, birthday, address)" +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);";
-
-        String queryCredit = "INSERT INTO creditWorkers(workerNr) VALUES (?);";
-
-        PreparedStatement statement = connection.prepareStatement(query);
-        statement.setInt(1, Bank.workerCounter);
-        statement.setString(2, status);
-        statement.setDouble(3, salary);
-        statement.setString(4, date.toString());
-        statement.setBoolean(5, sex);
-        statement.setString(6, firstName);
-        statement.setString(7, lastName);
-        statement.setString(8, birthday);
-        statement.setString(9,address);
-        statement.execute();
-
-        switch (status) {
-            case "credit-worker":
-                statement = connection.prepareStatement(queryCredit);
-                statement.setInt(1, Bank.workerCounter);
-                statement.execute();
-                break;
-            case "ceo":
-                ceo = createWorker(firstName, lastName, birthday, address, status, sex, salary, date.toString());
-                break;
-            case "supervisor":
-                supervisor = createWorker(firstName, lastName, birthday, address, status, sex, salary, date.toString());
-                break;
-        }
-
-        statement.close();
-        connection.close();
-        workerCounter ++;
     }
 
     public static void setNewCredit(Credit credit) throws SQLException {
@@ -267,41 +157,13 @@ public class Bank {
         return workerNr;
     }
 
-    /** ========================================================================================================
-     *                                              DELETE FROM DB.
-     * */
-
-
-
-
-
-
-    /**
-     * Till hier is DB method
-     *
-     * Next exercise Method!
-     * */
-    public static Credit creditWay(double sum, Costumer costumer, long time, String date) throws SQLException {
+    public static void creditWay(double sum, Costumer costumer, long time, String date) throws SQLException, IOException {
         Credit credit = new Credit(sum, costumer, time, date);
-        setNewCredit(credit);
-
-        return credit;
+        CreditDecision.decideCredit(credit);
     }
 
-
-    /**
-     * This methods need to change.
-     * */
-
-    private static Worker createWorker(String firstName, String lastName, String birthday, String address, String status, Boolean sex, double salary,String date){
-        /** Create worker for Ceo or supervisor! */
-        return new Worker(firstName, lastName, birthday, address, status, sex, salary, date);
+    @Override
+    public void workerDecide(Credit credit) {
+        System.out.println("Credit goes to worker for decision.");
     }
-
-    public static String getBankCode() {
-        return bankCode;
-    }
-
-    /** Duplicates methods  */
-
 }
